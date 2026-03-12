@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>급여 기반 가계부</title>
+  <link rel="stylesheet" href="style.css" />
+  <meta name="theme-color" content="#0f172a" />
+</head>
+<body>
+  <div class="app">
+    <header class="card header-card">
+      <div class="period" id="budgetPeriod">급여월 기간</div>
+      <h1 id="budgetTitle">급여월 가계부</h1>
+      <p class="label">남은 사용 가능 금액</p>
+      <div class="big-number" id="remainingAmount">0원</div>
+      <div class="sub-number" id="remainingDetail">사용 가능 예산 0원</div>
+    </header>
+
+    <section class="card form-card">
+      <h2>기본 설정</h2>
+
+      <label for="salary">실수령 월급</label>
+      <input type="number" id="salary" placeholder="예: 3150000" />
+
+      <label for="saving">선저축</label>
+      <input type="number" id="saving" placeholder="예: 1500000" />
+
+      <label for="fixed">고정지출</label>
+      <input type="number" id="fixed" placeholder="예: 725000" />
+
+      <label for="spent">현재까지 실제 지출</label>
+      <input type="number" id="spent" placeholder="예: 148500" />
+
+      <button id="saveBtn">저장하기</button>
+    </section>
+
+    <section class="card summary-card">
+      <h2>요약</h2>
+      <div class="summary-row">
+        <span>사용 가능 예산</span>
+        <strong id="availableBudget">0원</strong>
+      </div>
+      <div class="summary-row">
+        <span>현재까지 지출</span>
+        <strong id="currentSpent">0원</strong>
+      </div>
+      <div class="summary-row">
+        <span>남은 예산</span>
+        <strong id="remainingBudget">0원</strong>
+      </div>
+      <div class="summary-row">
+        <span>하루 사용 가능 금액</span>
+        <strong id="dailyBudget">0원</strong>
+      </div>
+    </section>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
