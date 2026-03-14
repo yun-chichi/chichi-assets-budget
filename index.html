@@ -402,12 +402,7 @@
       assetKey('코인', '기타'),
       assetKey('기타', '연금저축')
     ]);
-
-
-    function clone(obj) {
-      return JSON.parse(JSON.stringify(obj));
-    }
-    
+ 
     const DEFAULT_STATE = {
       version: APP_VERSION,
       salaryDay: 25,
@@ -548,15 +543,15 @@
       localStorage.setItem(APP_KEY, JSON.stringify(state));
     }
 
-    function getCurrentBaseMonthOffset() {
+    function getCurrentBaseMonthOffset(salaryDay) {
       const now = new Date();
-      const thisMonthSalary = getSalaryDateForMonth(now.getFullYear(), now.getMonth(), state.salaryDay);
+      const thisMonthSalary = getSalaryDateForMonth(now.getFullYear(), now.getMonth(), salaryDay);
       return normalizeDateOnly(now) >= normalizeDateOnly(thisMonthSalary) ? 0 : -1;
     }
-
+    
     function getPeriodStartByOffset(offset, salaryDay) {
       const now = new Date();
-      const baseMonth = getCurrentBaseMonthOffset() + offset;
+      const baseMonth = getCurrentBaseMonthOffset(salaryDay) + offset;
       const target = addMonths(new Date(now.getFullYear(), now.getMonth(), 1), baseMonth);
       return getSalaryDateForMonth(target.getFullYear(), target.getMonth(), salaryDay);
     }
