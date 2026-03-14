@@ -410,11 +410,14 @@
       periods: {},
       items: [],
       assets: [],
-      recurringRules: structuredClone(RECURRING_DEFAULTS),
+      recurringRules: clone(RECURRING_DEFAULTS),
       fundLedgers: [],
       settings: { theme: 'light', latestSeenVersion: APP_VERSION }
     };
-
+    
+    function clone(obj) {
+      return JSON.parse(JSON.stringify(obj));
+    }
     function uid() {
       return Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
     }
