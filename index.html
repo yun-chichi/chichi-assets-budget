@@ -1104,15 +1104,17 @@
 
         <div class="card">
           <div class="section-head">
-            <div class="section-title">지출 현황</div>
+            <div class="section-title">이번달 용돈 사용 현황</div>
             <button class="ghost-btn" onclick="goPage('ledger')">상세보기</button>
           </div>
           <div class="row"><div class="label">이번달 용돈</div><div class="value">${formatMoney(summary.allowance)}</div></div>
-          <div class="row"><div class="label">현재까지 실제 지출</div><div class="value">${formatMoney(summary.actualExpense)}</div></div>
+          <div class="row"><div class="label">이미 쓴 돈</div><div class="value">${formatMoney(summary.actualExpense)}</div></div>
           <div class="row"><div class="label">카드값</div><div class="value">${formatMoney(summary.plannedCardExpense)}</div></div>
-          <div class="row"><div class="label">계획된 변동지출</div><div class="value">${formatMoney(summary.plannedVariableExpense)}</div></div>
-          <div class="row"><div class="label">계획된 지출 합계</div><div class="value">${formatMoney(summary.plannedExpense)}</div></div>
-          <div class="row"><div class="label">예산 내 여유 금액</div><div class="value">${formatMoney(summary.spare)}</div></div>
+          <div class="row"><div class="label">계획해둔 변동지출</div><div class="value">${formatMoney(summary.plannedVariableExpense)}</div></div>
+          <div class="row"><div class="label">진짜 남은 돈</div><div class="value">${formatMoney(summary.spare)}</div></div>
+          <div class="help" style="margin-top:10px; margin-bottom:0;">
+            이번달 용돈 = 이미 쓴 돈 + 카드값 + 계획해둔 변동지출 + 진짜 남은 돈
+          </div>
         </div>
 
         <div class="card">
@@ -1120,11 +1122,13 @@
             <div class="section-title">이번달 계획 요약</div>
             <button class="ghost-btn" onclick="goPage('ledger')">상세보기</button>
           </div>
-          <div class="row"><div class="label">수입 합계(현황)</div><div class="value">${formatMoney(summary.income)}</div></div>
-          <div class="row"><div class="label">저축/투자 합계(현황)</div><div class="value">${formatMoney(summary.saving)}</div></div>
-          <div class="row"><div class="label">고정지출 합계(현황)</div><div class="value">${formatMoney(summary.fixed)}</div></div>
-          <div class="row"><div class="label">변동지출 계획 합계</div><div class="value">${formatMoney(summary.plannedVariableExpense)}</div></div>
-          <div class="row"><div class="label">이번달 예상 용돈</div><div class="value">${formatMoney(summary.allowance)}</div></div>
+          <div class="row"><div class="label">들어온 수입</div><div class="value">${formatMoney(summary.income)}</div></div>
+          <div class="row"><div class="label">확정 저축/투자</div><div class="value">${formatMoney(summary.saving)}</div></div>
+          <div class="row"><div class="label">확정 고정지출</div><div class="value">${formatMoney(summary.fixed)}</div></div>
+          <div class="row"><div class="label">용돈으로 배정된 금액</div><div class="value">${formatMoney(summary.allowance)}</div></div>
+          <div class="help" style="margin-top:10px; margin-bottom:0;">
+            들어온 수입 - 확정 저축/투자 - 확정 고정지출 = 이번달 용돈
+          </div>
         </div>
 
         <div class="card">
