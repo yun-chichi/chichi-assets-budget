@@ -263,6 +263,15 @@
     .sheet-title { font-size: 18px; font-weight: 800; }
     .help { font-size: 12px; color: var(--sub); margin-top: -8px; margin-bottom: 10px; }
     .danger { color: var(--danger); }
+    .pill {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #f3f4f6;
+      color: var(--sub);
+      font-size: 11px;
+      font-weight: 700;
+    }
   </style>
 </head>
 <body>
@@ -292,12 +301,35 @@
     </div>
   </div>
 
+  <input type="file" id="importFileInput" accept="application/json" style="display:none;" />
+
   <script>
     const APP_KEY = 'salary-budget-master-v2';
     const LEGACY_KEYS = ['salary-budget-master-v1'];
-    const APP_VERSION = '2.0.0';
+    const APP_VERSION = '2.1.0';
 
-    const CATEGORY_TREE = {
+    function clone(obj) {
+      return JSON.parse(JSON.stringify(obj));
+    }
+
+    function uid() {
+      return Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
+    }
+
+    function pad(n) { return String(n).padStart(2, '0'); }
+    function toInputDate(date) { return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`; }
+    function fromInputDate(v) { return new Date(v + 'T00:00:00'); }
+    function formatDate(d) { return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`; }
+    function formatMoney(value) { return `${Math.round(Number(value || 0)).toLocaleString('ko-KR')}원`; }
+    function parseMoneyInput(v) { return Number(String(v || '').replace(/[^\d-]/g, '')) || 0; }
+    function formatComma(v) { return v === '' ? '' : String(parseMoneyInput(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+    function normalizeDateOnly(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+    function dateStr(d) { return toInputDate(normalizeDateOnly(d)); }
+    function addDays(d, days) { const x = new Date(d); x.setDate(x.getDate() + days); return x; }
+    function addMonths(d, months) { return new Date(d.getFullYear(), d.getMonth() + months, d.getDate()); }
+    function assetKey(category, subcategory) { return `${category}__${subcategory || ''}`; }
+
+    const CATEGORY_BASE = {
       '수입': {
         '월급': [],
         '수당': ['통계활동비', '정근수당', '명절수당', '출장비', '성과급'],
@@ -315,8 +347,7 @@
         '통신': ['휴대폰', '인터넷'],
         '보험': [],
         '구독': [],
-        '교통': [],
-        '기타': ['여행계', '가족계', '지역인재', '팀비', '배드민턴레슨']
+        '기타': ['여행계', '가족계', '지역인재', '팀비']
       },
       '변동지출': {
         '식비': ['외식', '배달', '장보기', '구내식당', '기타'],
@@ -362,7 +393,6 @@
       { type: '고정지출', category: '기타', subcategory: '가족계', amount: 50000, memo: '기본 반복', active: true },
       { type: '고정지출', category: '기타', subcategory: '지역인재', amount: 15000, memo: '기본 반복', active: true },
       { type: '고정지출', category: '기타', subcategory: '팀비', amount: 20000, memo: '기본 반복', active: true },
-      { type: '고정지출', category: '기타', subcategory: '배드민턴레슨', amount: 100000, memo: '기본 반복', active: true },
       { type: '저축/투자', category: '코인', subcategory: '비트코인', amount: 200000, memo: '기본 반복', active: true },
       { type: '저축/투자', category: '금', subcategory: '', amount: 200000, memo: '기본 반복', active: true },
       { type: '저축/투자', category: '주식', subcategory: 'ISA', amount: 500000, memo: '기본 반복', active: true },
@@ -402,7 +432,7 @@
       assetKey('코인', '기타'),
       assetKey('기타', '연금저축')
     ]);
- 
+
     const DEFAULT_STATE = {
       version: APP_VERSION,
       salaryDay: 25,
@@ -412,27 +442,22 @@
       assets: [],
       recurringRules: clone(RECURRING_DEFAULTS),
       fundLedgers: [],
-      settings: { theme: 'light', latestSeenVersion: APP_VERSION }
+      budgetSettings: {},
+      customCategories: {},
+      settings: {
+        theme: 'light',
+        latestSeenVersion: APP_VERSION
+      }
     };
-    
-    
-    function uid() {
-      return Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
+
+    function getCategoryTree(type) {
+      if (state?.customCategories?.[type]) return state.customCategories[type];
+      return clone(CATEGORY_BASE[type] || {});
     }
 
-    function pad(n) { return String(n).padStart(2, '0'); }
-    function toInputDate(date) { return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`; }
-    function fromInputDate(v) { return new Date(v + 'T00:00:00'); }
-    function formatDate(d) { return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`; }
-    function formatMoney(value) { return `${Math.round(Number(value || 0)).toLocaleString('ko-KR')}원`; }
-    function parseMoneyInput(v) { return Number(String(v || '').replace(/[^\d-]/g, '')) || 0; }
-    function formatComma(v) { return v === '' ? '' : String(parseMoneyInput(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
-    function normalizeDateOnly(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
-    function dateStr(d) { return toInputDate(normalizeDateOnly(d)); }
-    function addDays(d, days) { const x = new Date(d); x.setDate(x.getDate() + days); return x; }
-    function addMonths(d, months) { return new Date(d.getFullYear(), d.getMonth() + months, d.getDate()); }
-    function assetKey(category, subcategory) { return `${category}__${subcategory || ''}`; }
-    function clone(obj) { return JSON.parse(JSON.stringify(obj)); }
+    function getEditableCategoryTypes() {
+      return ['수입', '저축/투자', '고정지출', '변동지출', '카드사용', '부채'];
+    }
 
     function isHoliday(date) {
       return Boolean(KR_HOLIDAYS[dateStr(date)]);
@@ -450,9 +475,38 @@
       return adjustToPreviousBusinessDay(new Date(year, monthIndex, salaryDay));
     }
 
+    function getCurrentBaseMonthOffset(salaryDay) {
+      const now = new Date();
+      const thisMonthSalary = getSalaryDateForMonth(now.getFullYear(), now.getMonth(), salaryDay);
+      return normalizeDateOnly(now) >= normalizeDateOnly(thisMonthSalary) ? 0 : -1;
+    }
+
+    function getPeriodStartByOffset(offset, salaryDay) {
+      const now = new Date();
+      const baseMonth = getCurrentBaseMonthOffset(salaryDay) + offset;
+      const target = addMonths(new Date(now.getFullYear(), now.getMonth(), 1), baseMonth);
+      return getSalaryDateForMonth(target.getFullYear(), target.getMonth(), salaryDay);
+    }
+
+    function getPeriodKey(offset, salaryDay) {
+      const start = getPeriodStartByOffset(offset, salaryDay);
+      return `${start.getFullYear()}-${pad(start.getMonth() + 1)}`;
+    }
+
+    function getDefaultPeriodMeta(offset, salaryDay) {
+      const start = getPeriodStartByOffset(offset, salaryDay);
+      const nextStart = getPeriodStartByOffset(offset + 1, salaryDay);
+      const end = addDays(nextStart, -1);
+      return {
+        title: `${start.getFullYear()}년 ${start.getMonth() + 1}월 급여월`,
+        start: toInputDate(start),
+        end: toInputDate(end)
+      };
+    }
+
     function seedAssets() {
       const list = [];
-      Object.entries(CATEGORY_TREE['자산']).forEach(([category, subs]) => {
+      Object.entries(CATEGORY_BASE['자산']).forEach(([category, subs]) => {
         if (subs.length) {
           subs.forEach(sub => list.push(createAssetRecord(category, sub)));
         } else {
@@ -479,16 +533,15 @@
     }
 
     function migrateState(raw) {
-      const base = clone(DEFAULT_STATE);
-      const merged = { ...base, ...raw };
+      const merged = clone(DEFAULT_STATE);
       merged.version = APP_VERSION;
-      merged.recurringRules = Array.isArray(raw.recurringRules) && raw.recurringRules.length ? raw.recurringRules : clone(RECURRING_DEFAULTS);
+      merged.salaryDay = Number(raw.salaryDay ?? 25);
+      merged.monthOffset = Number(raw.monthOffset ?? 0);
       merged.periods = raw.periods || {};
-      merged.fundLedgers = raw.fundLedgers || [];
-      merged.items = (raw.items || []).map(item => ({
+      merged.items = Array.isArray(raw.items) ? raw.items.map(item => ({
         id: item.id || uid(),
-        periodKey: item.periodKey,
-        type: item.type,
+        periodKey: item.periodKey || '',
+        type: item.type || '',
         category: item.category || '',
         subcategory: item.subcategory || '',
         amount: Number(item.amount || 0),
@@ -499,22 +552,39 @@
         linkedAssetKey: item.linkedAssetKey || '',
         linkedFundType: item.linkedFundType || '',
         createdAt: item.createdAt || new Date().toISOString()
-      }));
-      if (raw.assets?.length) {
-        merged.assets = raw.assets.map(a => ({
-          id: a.id || uid(),
-          category: a.category,
-          subcategory: a.subcategory || '',
-          currentAmount: Number(a.currentAmount ?? a.amount ?? 0),
-          reserveAmount: Number(a.reserveAmount || 0),
-          investedAmount: Number(a.investedAmount || 0),
-          editableAt: a.editableAt || '2026-03-12',
-          isInvestment: typeof a.isInvestment === 'boolean' ? a.isInvestment : INVESTMENT_ASSET_KEYS.has(assetKey(a.category, a.subcategory || '')),
-          memo: a.memo || ''
-        }));
-      } else {
-        merged.assets = seedAssets();
-      }
+      })) : [];
+      merged.assets = Array.isArray(raw.assets) && raw.assets.length
+        ? raw.assets.map(a => ({
+            id: a.id || uid(),
+            category: a.category || '',
+            subcategory: a.subcategory || '',
+            currentAmount: Number(a.currentAmount ?? a.amount ?? 0),
+            reserveAmount: Number(a.reserveAmount || 0),
+            investedAmount: Number(a.investedAmount || 0),
+            editableAt: a.editableAt || '2026-03-12',
+            isInvestment: typeof a.isInvestment === 'boolean'
+              ? a.isInvestment
+              : INVESTMENT_ASSET_KEYS.has(assetKey(a.category || '', a.subcategory || '')),
+            memo: a.memo || ''
+          }))
+        : seedAssets();
+      merged.recurringRules = Array.isArray(raw.recurringRules) && raw.recurringRules.length
+        ? raw.recurringRules.map(rule => ({
+            type: rule.type || '',
+            category: rule.category || '',
+            subcategory: rule.subcategory || '',
+            amount: Number(rule.amount || 0),
+            memo: rule.memo || '',
+            active: rule.active !== false
+          }))
+        : clone(RECURRING_DEFAULTS);
+      merged.fundLedgers = Array.isArray(raw.fundLedgers) ? raw.fundLedgers : [];
+      merged.budgetSettings = raw.budgetSettings || {};
+      merged.customCategories = raw.customCategories || {};
+      merged.settings = {
+        theme: raw.settings?.theme || 'light',
+        latestSeenVersion: raw.settings?.latestSeenVersion || APP_VERSION
+      };
       return merged;
     }
 
@@ -533,7 +603,16 @@
         seeded.periods[key] = getDefaultPeriodMeta(0, seeded.salaryDay);
         return seeded;
       }
-      return migrateState(JSON.parse(raw));
+      try {
+        return migrateState(JSON.parse(raw));
+      } catch (e) {
+        console.error(e);
+        const seeded = clone(DEFAULT_STATE);
+        seeded.assets = seedAssets();
+        const key = getPeriodKey(0, seeded.salaryDay);
+        seeded.periods[key] = getDefaultPeriodMeta(0, seeded.salaryDay);
+        return seeded;
+      }
     }
 
     let state = loadState();
@@ -543,40 +622,11 @@
       localStorage.setItem(APP_KEY, JSON.stringify(state));
     }
 
-    function getCurrentBaseMonthOffset(salaryDay) {
-      const now = new Date();
-      const thisMonthSalary = getSalaryDateForMonth(now.getFullYear(), now.getMonth(), salaryDay);
-      return normalizeDateOnly(now) >= normalizeDateOnly(thisMonthSalary) ? 0 : -1;
-    }
-    
-    function getPeriodStartByOffset(offset, salaryDay) {
-      const now = new Date();
-      const baseMonth = getCurrentBaseMonthOffset(salaryDay) + offset;
-      const target = addMonths(new Date(now.getFullYear(), now.getMonth(), 1), baseMonth);
-      return getSalaryDateForMonth(target.getFullYear(), target.getMonth(), salaryDay);
-    }
-
-    function getPeriodKey(offset, salaryDay) {
-      const start = getPeriodStartByOffset(offset, salaryDay);
-      return `${start.getFullYear()}-${pad(start.getMonth() + 1)}`;
-    }
-
-    function getDefaultPeriodMeta(offset, salaryDay) {
-      const start = getPeriodStartByOffset(offset, salaryDay);
-      const nextStart = getPeriodStartByOffset(offset + 1, salaryDay);
-      const end = addDays(nextStart, -1);
-      return {
-        title: `${start.getFullYear()}년 ${start.getMonth() + 1}월 급여월`,
-        start: toInputDate(start),
-        end: toInputDate(end)
-      };
-    }
-
     function ensurePeriod(offset) {
       const key = getPeriodKey(offset, state.salaryDay);
       if (!state.periods[key]) {
         state.periods[key] = getDefaultPeriodMeta(offset, state.salaryDay);
-        createRecurringItemsForPeriod(key, state.periods[key].start, offset);
+        createRecurringItemsForPeriod(key, state.periods[key].start);
       }
       return { key, ...state.periods[key] };
     }
@@ -602,8 +652,10 @@
       return items.reduce((acc, cur) => acc + Number(fn(cur) || 0), 0);
     }
 
-    function isPlannedExpense(item) {
-      return item.status === '계획' && item.type === '변동지출';
+    function getPreviousPeriodKey(periodKey) {
+      const [y, m] = periodKey.split('-').map(Number);
+      const date = new Date(y, m - 2, 1);
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
     }
 
     function getAssetRecord(category, subcategory) {
@@ -617,7 +669,9 @@
     }
 
     function getAssetDisplayTotal(asset) {
-      return asset.isInvestment ? Number(asset.reserveAmount || 0) + Number(asset.currentAmount || 0) : Number(asset.currentAmount || 0);
+      return asset.isInvestment
+        ? Number(asset.reserveAmount || 0) + Number(asset.currentAmount || 0)
+        : Number(asset.currentAmount || 0);
     }
 
     function getAssetTotal() {
@@ -625,54 +679,39 @@
     }
 
     function getDebtTotal() {
-      return sumBy(state.items.filter(i => i.type === '부채' && i.status === '현황'), i => i.amount)
-        + sumBy(state.items.filter(i => i.type === '카드사용' && i.status === '계획된지출'), i => i.amount);
+      return sumBy(
+        state.items.filter(i => i.type === '부채' && i.status === '현황'),
+        i => i.amount
+      ) + sumBy(
+        state.items.filter(i => i.type === '카드사용' && i.status === '계획된지출'),
+        i => i.amount
+      );
     }
 
-    function updateAssetBySaving(item, deltaAmount) {
+    function applySavingEffect(item, direction) {
+      if (item.type !== '저축/투자' || item.status !== '현황') return;
       const asset = getAssetRecord(item.category, item.subcategory || '');
+      const delta = Number(item.amount || 0) * direction;
       if (asset.isInvestment) {
-        asset.reserveAmount += Number(deltaAmount || 0);
+        asset.reserveAmount += delta;
       } else {
-        asset.currentAmount += Number(deltaAmount || 0);
+        asset.currentAmount += delta;
       }
-      asset.editableAt = toInputDate(new Date());
+      asset.editableAt = item.date || toInputDate(new Date());
     }
 
-    function computeSummary(periodKey) {
-      const items = getItemsByPeriod(periodKey);
-      const income = sumBy(items.filter(i => i.type === '수입' && i.status === '현황'), i => i.amount);
-      const saving = sumBy(items.filter(i => i.type === '저축/투자' && i.status === '현황'), i => i.amount);
-      const fixed = sumBy(items.filter(i => i.type === '고정지출' && i.status === '현황'), i => i.amount);
-      const allowance = income - saving - fixed;
-      const actualExpense = sumBy(items.filter(i => i.status === '실제지출'), i => i.amount);
-      const plannedExpense = sumBy(items.filter(i => i.status === '계획된지출' || isPlannedExpense(i)), i => i.amount);
-      const usedBudget = actualExpense + plannedExpense;
-      const spare = allowance - actualExpense - plannedExpense;
-      const spendRate = allowance > 0 ? Math.min(100, Math.max(0, (usedBudget / allowance) * 100)) : 0;
-      return { income, saving, fixed, allowance, actualExpense, plannedExpense, usedBudget, spare, spendRate };
-    }
-
-    function getRemainingDays(endStr) {
-      const today = normalizeDateOnly(new Date());
-      const end = fromInputDate(endStr);
-      const diff = normalizeDateOnly(end) - today;
-      return Math.max(1, Math.floor(diff / 86400000) + 1);
-    }
-
-    function getPreviousPeriodKey(periodKey) {
-      const [y, m] = periodKey.split('-').map(Number);
-      const date = new Date(y, m - 2, 1);
-      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
-    }
-
-    function createRecurringItemsForPeriod(periodKey, startDate, offset) {
+    function createRecurringItemsForPeriod(periodKey, startDate) {
       const existing = getItemsByPeriod(periodKey).filter(i => i.source === 'recurring');
       if (existing.length) return;
       const previousKey = getPreviousPeriodKey(periodKey);
       const previousItems = getItemsByPeriod(previousKey);
       state.recurringRules.filter(r => r.active).forEach(rule => {
-        const prev = previousItems.find(i => i.source === 'recurring' && i.type === rule.type && i.category === rule.category && (i.subcategory || '') === (rule.subcategory || ''));
+        const prev = previousItems.find(i =>
+          i.source === 'recurring' &&
+          i.type === rule.type &&
+          i.category === rule.category &&
+          (i.subcategory || '') === (rule.subcategory || '')
+        );
         state.items.push({
           id: uid(),
           periodKey,
@@ -689,6 +728,66 @@
           createdAt: new Date().toISOString()
         });
       });
+    }
+
+    function getRemainingDays(endStr) {
+      const today = normalizeDateOnly(new Date());
+      const end = fromInputDate(endStr);
+      const diff = normalizeDateOnly(end) - today;
+      return Math.max(1, Math.floor(diff / 86400000) + 1);
+    }
+
+    function getCategoryBudget(periodKey, category) {
+      const explicit = Number(state.budgetSettings?.[periodKey]?.[category] || 0);
+      if (explicit > 0) return explicit;
+      return sumBy(
+        getItemsByPeriod(periodKey).filter(i => i.type === '변동지출' && i.status === '계획' && i.category === category),
+        i => i.amount
+      );
+    }
+
+    function getCategorySpent(periodKey, category) {
+      return sumBy(
+        getItemsByPeriod(periodKey).filter(i =>
+          i.category === category &&
+          ['실제지출', '계획된지출'].includes(i.status)
+        ),
+        i => i.amount
+      );
+    }
+
+    function computeSummary(periodKey) {
+      const items = getItemsByPeriod(periodKey);
+      const income = sumBy(items.filter(i => i.type === '수입' && i.status === '현황'), i => i.amount);
+      const saving = sumBy(items.filter(i => i.type === '저축/투자' && i.status === '현황'), i => i.amount);
+      const fixed = sumBy(items.filter(i => i.type === '고정지출' && i.status === '현황'), i => i.amount);
+      const allowance = income - saving - fixed;
+      const actualExpense = sumBy(items.filter(i => i.status === '실제지출'), i => i.amount);
+      const plannedExpense = sumBy(items.filter(i => i.status === '계획된지출'), i => i.amount);
+      const usedBudget = actualExpense + plannedExpense;
+      const spare = allowance - usedBudget;
+      const spendRate = allowance > 0 ? Math.min(100, Math.max(0, (usedBudget / allowance) * 100)) : 0;
+      return { income, saving, fixed, allowance, actualExpense, plannedExpense, usedBudget, spare, spendRate };
+    }
+
+    function topCategoryUsage(periodKey) {
+      const budgetCategories = Object.keys(state.budgetSettings?.[periodKey] || {});
+      const itemCategories = [...new Set(
+        getItemsByPeriod(periodKey)
+          .filter(i => ['변동지출', '카드사용'].includes(i.type))
+          .map(i => i.category)
+      )];
+      const merged = [...new Set([...budgetCategories, ...itemCategories])];
+      return merged
+        .map(category => {
+          const budget = getCategoryBudget(periodKey, category);
+          const used = getCategorySpent(periodKey, category);
+          const rate = budget > 0 ? (used / budget) * 100 : 0;
+          return { category, budget, used, rate };
+        })
+        .filter(v => v.budget > 0 || v.used > 0)
+        .sort((a, b) => b.used - a.used)
+        .slice(0, 8);
     }
 
     function openModal(title, bodyHtml) {
@@ -737,21 +836,77 @@
       return parseMoneyInput(el?.dataset.raw || el?.value || '');
     }
 
-    function topCategoryUsage(periodKey) {
-      const items = getItemsByPeriod(periodKey);
-      const map = {};
-      items.forEach(item => {
-        if (!['변동지출', '카드사용'].includes(item.type)) return;
-        const key = item.category;
-        if (!map[key]) map[key] = { category: key, budget: 0, used: 0 };
-        if (item.type === '변동지출' && item.status === '계획') map[key].budget += Number(item.amount);
-        if ((item.type === '카드사용' && item.status === '계획된지출') || item.status === '실제지출') map[key].used += Number(item.amount);
-      });
-      return Object.values(map)
-        .filter(v => v.budget > 0 || v.used > 0)
-        .map(v => ({ ...v, rate: v.budget > 0 ? (v.used / v.budget) * 100 : 0 }))
-        .sort((a,b)=>b.used-a.used)
-        .slice(0,5);
+    function getStatusOptions(type) {
+      if (type === '변동지출') {
+        return ['계획', '실제지출'];
+      }
+      if (type === '카드사용') {
+        return ['계획된지출', '실제지출'];
+      }
+      if (type === '부채') {
+        return ['현황'];
+      }
+      return ['계획', '현황'];
+    }
+
+    function buildStatusSelect(type, selected) {
+      const options = getStatusOptions(type);
+      if (options.length === 1) {
+        return `<input type="hidden" id="itemStatus" value="${options[0]}" /><div class="pill">${options[0]}</div>`;
+      }
+      return `
+        <select id="itemStatus">
+          ${options.map(s => `<option value="${s}" ${s === selected ? 'selected' : ''}>${s}</option>`).join('')}
+        </select>
+      `;
+    }
+
+    function buildItemForm(type, periodKey, item = null) {
+      const meta = state.periods[periodKey];
+      const today = toInputDate(new Date());
+      const defaultDate = item?.date || today;
+      const selectedStatus = item?.status || (type === '카드사용' ? '계획된지출' : type === '부채' ? '현황' : '계획');
+      const memo = item?.memo || '';
+      const amount = item?.amount || '';
+      return `
+        <input type="hidden" id="itemType" value="${type}" />
+        <input type="hidden" id="itemPeriodKey" value="${periodKey}" />
+        ${item ? `<input type="hidden" id="editItemId" value="${item.id}" />` : ''}
+        <label>카테고리</label>
+        <select id="itemCategory"></select>
+        <label>하위 카테고리</label>
+        <select id="itemSubcategory"></select>
+        <label>상태</label>
+        ${buildStatusSelect(type, selectedStatus)}
+        <label>금액</label>
+        ${moneyInput('itemAmount', amount)}
+        <label>날짜</label>
+        <input id="itemDate" type="date" value="${defaultDate || meta?.start || today}" />
+        <label>메모</label>
+        <textarea id="itemMemo" placeholder="메모를 입력하세요">${memo}</textarea>
+        <button class="primary-btn" onclick="${item ? 'saveEditedItem()' : 'saveNewItem()'}">저장</button>
+      `;
+    }
+
+    function bindCategorySelect(type, item = null) {
+      const categorySelect = document.getElementById('itemCategory');
+      const subSelect = document.getElementById('itemSubcategory');
+      const tree = getCategoryTree(type);
+      const cats = Object.keys(tree);
+      if (!cats.length) {
+        categorySelect.innerHTML = `<option value="">카테고리 없음</option>`;
+        subSelect.innerHTML = `<option value="">선택 안 함</option>`;
+        return;
+      }
+      categorySelect.innerHTML = cats.map(c => `<option value="${c}">${c}</option>`).join('');
+      function updateSubs() {
+        const subs = tree[categorySelect.value] || [];
+        subSelect.innerHTML = `<option value="">선택 안 함</option>` + subs.map(s => `<option value="${s}">${s}</option>`).join('');
+      }
+      categorySelect.onchange = updateSubs;
+      categorySelect.value = item?.category && cats.includes(item.category) ? item.category : cats[0];
+      updateSubs();
+      if (item?.subcategory) subSelect.value = item.subcategory;
     }
 
     function renderHome() {
@@ -760,6 +915,7 @@
       const remainingDays = getRemainingDays(meta.end);
       const daily = Math.floor(summary.spare / remainingDays);
       const categoryBudget = topCategoryUsage(meta.key);
+
       document.getElementById('page-home').innerHTML = `
         <div class="card hero">
           <div class="period-row">
@@ -826,7 +982,7 @@
         <div class="card">
           <div class="section-head">
             <div class="section-title">카테고리 예산 / 지출</div>
-            <button class="ghost-btn" onclick="goPage('reports')">리포트</button>
+            <button class="ghost-btn" onclick="openBudgetEditor()">예산 설정</button>
           </div>
           ${categoryBudget.length ? categoryBudget.map(row => `
             <div class="budget-item">
@@ -835,9 +991,9 @@
                   <div class="item-title">${row.category}</div>
                   <div class="item-desc">${formatMoney(row.used)} / ${formatMoney(row.budget)}</div>
                 </div>
-                <div class="value">${row.rate.toFixed(0)}%</div>
+                <div class="value">${row.budget > 0 ? row.rate.toFixed(0) + '%' : '-'}</div>
               </div>
-              <div class="budget-bar"><div class="budget-fill" style="width:${Math.min(100,row.rate)}%"></div></div>
+              <div class="budget-bar"><div class="budget-fill" style="width:${row.budget > 0 ? Math.min(100, row.rate) : 0}%"></div></div>
             </div>
           `).join('') : `<div class="empty">카테고리 예산 데이터가 아직 없어요.</div>`}
         </div>
@@ -847,7 +1003,7 @@
           <div class="fab-wrap">
             <button class="fab" onclick="openAddItem('수입')">수입 추가</button>
             <button class="fab" onclick="openAddItem('저축/투자')">저축/투자 추가</button>
-            <button class="fab" onclick="openAddItem('변동지출')">변동지출 계획</button>
+            <button class="fab" onclick="openAddItem('변동지출')">변동지출 입력</button>
             <button class="fab" onclick="openAddItem('카드사용')">카드사용 입력</button>
           </div>
         </div>
@@ -855,12 +1011,20 @@
     }
 
     function renderItemCard(item) {
-      const badgeClass = item.status === '계획' ? 'plan' : item.status === '계획된지출' ? 'card' : 'actual';
-      const badgeText = item.status;
+      const badgeClass = item.status === '계획'
+        ? 'plan'
+        : item.status === '계획된지출'
+          ? 'card'
+          : 'actual';
       const sub = item.subcategory ? ` · ${item.subcategory}` : '';
       const actions = [];
-      if (item.status === '계획') actions.push(`<button class="small-btn" onclick="openMoveConfirm('${item.id}')">이동</button>`);
-      if (item.type === '카드사용' && item.status === '계획된지출') actions.push(`<button class="small-btn" onclick="openCardPay('${item.id}')">즉시결제</button>`);
+      actions.push(`<button class="small-btn" onclick="openEditItem('${item.id}')">수정</button>`);
+      if (item.status === '계획') {
+        actions.push(`<button class="small-btn" onclick="openMoveConfirm('${item.id}')">확정</button>`);
+      }
+      if (item.type === '카드사용' && item.status === '계획된지출') {
+        actions.push(`<button class="small-btn" onclick="openCardPay('${item.id}')">즉시결제</button>`);
+      }
       if (item.type === '저축/투자' && item.category === '현금' && (item.subcategory === '비상금' || item.subcategory === '경조사') && item.status === '현황') {
         actions.push(`<button class="small-btn" onclick="openFundLedger('${item.subcategory}')">세부내역</button>`);
       }
@@ -873,7 +1037,7 @@
               <div class="item-desc">${item.memo || '메모 없음'} · ${item.date || ''}</div>
             </div>
             <div>
-              <div class="badge ${badgeClass}">${badgeText}</div>
+              <div class="badge ${badgeClass}">${item.status}</div>
               <div class="value" style="margin-top:8px; text-align:right;">${formatMoney(item.amount)}</div>
             </div>
           </div>
@@ -888,6 +1052,7 @@
       const plans = sortByDateDesc(items.filter(i => i.status === '계획'));
       const cardPlanned = sortByDateDesc(items.filter(i => i.status === '계획된지출'));
       const actuals = sortByDateDesc(items.filter(i => i.status === '현황' || i.status === '실제지출'));
+
       document.getElementById('page-ledger').innerHTML = `
         <div class="card">
           <div class="section-head">
@@ -895,10 +1060,10 @@
             <div class="chips"><span class="chip">${meta.title}</span></div>
           </div>
           <div class="fab-wrap">
-            <button class="fab" onclick="openAddItem('수입')">수입 계획</button>
-            <button class="fab" onclick="openAddItem('저축/투자')">저축 계획</button>
-            <button class="fab" onclick="openAddItem('고정지출')">고정지출 계획</button>
-            <button class="fab" onclick="openAddItem('변동지출')">변동지출 계획</button>
+            <button class="fab" onclick="openAddItem('수입')">수입 입력</button>
+            <button class="fab" onclick="openAddItem('저축/투자')">저축 입력</button>
+            <button class="fab" onclick="openAddItem('고정지출')">고정지출 입력</button>
+            <button class="fab" onclick="openAddItem('변동지출')">변동지출 입력</button>
             <button class="fab" onclick="openAddItem('카드사용')">카드사용 입력</button>
             <button class="fab" onclick="openAddDebt()">부채 입력</button>
           </div>
@@ -927,6 +1092,7 @@
         if (!grouped[a.category]) grouped[a.category] = [];
         grouped[a.category].push(a);
       });
+
       document.getElementById('page-assets').innerHTML = `
         <div class="card">
           <div class="section-title">자산</div>
@@ -941,6 +1107,7 @@
             </div>
           </div>
         </div>
+
         <div class="card">
           <div class="section-head">
             <div class="section-title">기준일 및 자산 수정</div>
@@ -948,6 +1115,7 @@
           </div>
           <div class="muted">초기 기준값을 입력한 뒤, 이후에도 자산 메뉴에서 직접 수정할 수 있어요.</div>
         </div>
+
         ${Object.entries(grouped).map(([category, list]) => `
           <div class="card">
             <div class="section-head"><div class="section-title">${category}</div></div>
@@ -978,6 +1146,7 @@
       const summary = computeSummary(meta.key);
       const categoryMap = {};
       const subMap = {};
+
       getItemsByPeriod(meta.key).forEach(item => {
         if (!['변동지출', '카드사용'].includes(item.type)) return;
         if (!(item.status === '실제지출' || item.status === '계획된지출')) return;
@@ -985,8 +1154,11 @@
         const subKey = `${item.category} > ${item.subcategory || '기타'}`;
         subMap[subKey] = (subMap[subKey] || 0) + Number(item.amount);
       });
-      const catRows = Object.entries(categoryMap).sort((a,b)=>b[1]-a[1]);
-      const subRows = Object.entries(subMap).sort((a,b)=>b[1]-a[1]);
+
+      const catRows = Object.entries(categoryMap).sort((a, b) => b[1] - a[1]);
+      const subRows = Object.entries(subMap).sort((a, b) => b[1] - a[1]);
+      const budgetRows = topCategoryUsage(meta.key);
+
       document.getElementById('page-reports').innerHTML = `
         <div class="card">
           <div class="section-title">리포트</div>
@@ -997,13 +1169,28 @@
             <div class="card" style="margin:0; box-shadow:none; border:1px solid var(--line);"><div class="label">예산 여유</div><div class="report-num">${formatMoney(summary.spare)}</div></div>
           </div>
         </div>
+
+        <div class="card">
+          <div class="section-head">
+            <div class="section-title">카테고리 예산 대비 사용</div>
+            <button class="ghost-btn" onclick="openBudgetEditor()">예산 설정</button>
+          </div>
+          ${budgetRows.length ? budgetRows.map(row => `
+            <div class="row">
+              <div class="label">${row.category}<br><span class="muted">${formatMoney(row.used)} / ${formatMoney(row.budget)}</span></div>
+              <div class="value">${row.budget > 0 ? row.rate.toFixed(0) + '%' : '-'}</div>
+            </div>
+          `).join('') : `<div class="empty">설정된 예산이 없어요.</div>`}
+        </div>
+
         <div class="card">
           <div class="section-title">카테고리별 합계</div>
-          ${catRows.length ? catRows.map(([k,v]) => `<div class="row"><div class="label">${k}</div><div class="value">${formatMoney(v)}</div></div>`).join('') : `<div class="empty">표시할 데이터가 없어요.</div>`}
+          ${catRows.length ? catRows.map(([k, v]) => `<div class="row"><div class="label">${k}</div><div class="value">${formatMoney(v)}</div></div>`).join('') : `<div class="empty">표시할 데이터가 없어요.</div>`}
         </div>
+
         <div class="card">
           <div class="section-title">하위 카테고리별 합계</div>
-          ${subRows.length ? subRows.map(([k,v]) => `<div class="row"><div class="label">${k}</div><div class="value">${formatMoney(v)}</div></div>`).join('') : `<div class="empty">표시할 데이터가 없어요.</div>`}
+          ${subRows.length ? subRows.map(([k, v]) => `<div class="row"><div class="label">${k}</div><div class="value">${formatMoney(v)}</div></div>`).join('') : `<div class="empty">표시할 데이터가 없어요.</div>`}
         </div>
       `;
     }
@@ -1017,6 +1204,23 @@
           <div class="help">월급일은 1~28일로 입력하세요. 주말·공휴일이면 직전 영업일로 계산해요.</div>
           <button class="primary-btn" onclick="saveSettings()">설정 저장</button>
         </div>
+
+        <div class="card">
+          <div class="section-head">
+            <div class="section-title">카테고리별 예산</div>
+            <button class="ghost-btn" onclick="openBudgetEditor()">관리</button>
+          </div>
+          <div class="muted">급여월별로 카테고리 예산을 따로 설정할 수 있어요.</div>
+        </div>
+
+        <div class="card">
+          <div class="section-head">
+            <div class="section-title">카테고리 관리</div>
+            <button class="ghost-btn" onclick="openCategoryManager()">관리</button>
+          </div>
+          <div class="muted">수입, 고정지출, 변동지출 등의 카테고리를 직접 추가/수정/삭제할 수 있어요.</div>
+        </div>
+
         <div class="card">
           <div class="section-head">
             <div class="section-title">반복 기본값</div>
@@ -1024,6 +1228,20 @@
           </div>
           <div class="muted">설정에서 수정한 반복 기본값은 이후 급여월부터 반영돼요.</div>
         </div>
+
+        <div class="card">
+          <div class="section-head">
+            <div class="section-title">데이터 백업 / 복원</div>
+          </div>
+          <div class="actions">
+            <button class="small-btn" onclick="exportData()">JSON 내보내기</button>
+            <button class="small-btn" onclick="triggerImport()">JSON 가져오기</button>
+          </div>
+          <div class="help" style="margin-top:8px;">
+            현재 앱 데이터는 브라우저 기기별 저장이에요. 가장 안전한 방법은 주기적으로 JSON 내보내기 백업 파일을 저장하는 거예요.
+          </div>
+        </div>
+
         <div class="card">
           <div class="section-head">
             <div class="section-title">앱 업데이트</div>
@@ -1031,12 +1249,12 @@
           </div>
           <div class="muted">홈화면 앱이 예전 화면을 보이면 앱 삭제 후 다시 홈 화면에 추가하세요.</div>
         </div>
+
         <div class="card">
           <div class="section-title">데이터 관리</div>
           <button class="danger-btn" style="width:100%; padding:14px;" onclick="resetApp()">전체 데이터 초기화</button>
         </div>
       `;
-      bindMoneyInputs(document.getElementById('page-settings'));
     }
 
     function movePeriod(delta) {
@@ -1060,7 +1278,7 @@
             <input id="periodEnd" type="date" value="${meta.end}" />
           </div>
         </div>
-        <div class="help">이 급여월을 수정하면 이후 급여월도 연쇄적으로 다시 계산돼요.</div>
+        <div class="help">이 급여월을 수정하면 이후 급여월 기본 기간도 다시 계산돼요.</div>
         <button class="primary-btn" onclick="savePeriodMeta()">저장</button>
       `);
     }
@@ -1069,86 +1287,30 @@
       const current = getCurrentPeriodMeta();
       const start = document.getElementById('periodStart').value;
       const end = document.getElementById('periodEnd').value;
-      state.periods[current.key] = { title: document.getElementById('periodTitle').value, start, end };
-      recalculateFuturePeriods(current.key, start);
+      state.periods[current.key] = {
+        title: document.getElementById('periodTitle').value.trim() || current.title,
+        start,
+        end
+      };
       saveState();
       closeModal();
       renderAll();
     }
 
-    function recalculateFuturePeriods(currentKey, currentStart) {
-      const offsets = [-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1,0,1,2,3,4,5,6,7,8,9,10,11,12];
-      const currentOffset = state.monthOffset;
-      const keyToOffset = {};
-      offsets.forEach(off => { keyToOffset[getPeriodKey(off, state.salaryDay)] = off; });
-      const baseOffset = keyToOffset[currentKey];
-      if (baseOffset === undefined) return;
-      for (let i = baseOffset + 1; i <= baseOffset + 12; i++) {
-        const key = getPeriodKey(i, state.salaryDay);
-        const meta = getDefaultPeriodMeta(i, state.salaryDay);
-        state.periods[key] = meta;
-        createRecurringItemsForPeriod(key, meta.start, i);
-      }
-      state.monthOffset = currentOffset;
-    }
-
-    function buildItemForm(type, periodKey) {
-      const meta = state.periods[periodKey];
-      const defaultDate = meta?.start || toInputDate(new Date());
-      return `
-        <input type="hidden" id="itemType" value="${type}" />
-        <input type="hidden" id="itemPeriodKey" value="${periodKey}" />
-        <label>카테고리</label>
-        <select id="itemCategory"></select>
-        <label>하위 카테고리</label>
-        <select id="itemSubcategory"></select>
-        <label>금액</label>
-        ${moneyInput('itemAmount')}
-        <label>날짜</label>
-        <input id="itemDate" type="date" value="${defaultDate}" />
-        <label>메모</label>
-        <textarea id="itemMemo" placeholder="메모를 입력하세요"></textarea>
-        <button class="primary-btn" onclick="saveNewItem()">저장</button>
-      `;
-    }
-
     function openAddItem(type) {
       const meta = getCurrentPeriodMeta();
       openModal(`${type} 추가`, buildItemForm(type, meta.key));
-      bindCategorySelect(type, true);
+      bindCategorySelect(type);
     }
 
-    function bindCategorySelect(type, applyDefaults = false) {
-      const categorySelect = document.getElementById('itemCategory');
-      const subSelect = document.getElementById('itemSubcategory');
-      const tree = CATEGORY_TREE[type];
-      const cats = Object.keys(tree);
-      categorySelect.innerHTML = cats.map(c => `<option value="${c}">${c}</option>`).join('');
-      function updateSubs() {
-        const subs = tree[categorySelect.value] || [];
-        subSelect.innerHTML = `<option value="">선택 안 함</option>` + subs.map(s => `<option value="${s}">${s}</option>`).join('');
-      }
-      categorySelect.onchange = updateSubs;
-      updateSubs();
-      if (applyDefaults) {
-        const periodKey = document.getElementById('itemPeriodKey').value;
-        const prevKey = getPreviousPeriodKey(periodKey);
-        const prevItems = getItemsByPeriod(prevKey).filter(i => i.type === type);
-        if (prevItems.length) {
-          const last = prevItems.sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0];
-          categorySelect.value = last.category;
-          updateSubs();
-          subSelect.value = last.subcategory || '';
-          document.getElementById('itemAmount').dataset.raw = String(Number(last.amount || 0));
-          document.getElementById('itemAmount').value = formatComma(String(Number(last.amount || 0)));
-          document.getElementById('itemMemo').value = last.memo || '';
-        }
-      }
+    function openAddDebt() {
+      const meta = getCurrentPeriodMeta();
+      openModal('부채 입력', buildItemForm('부채', meta.key));
+      bindCategorySelect('부채');
     }
 
     function saveNewItem() {
       const type = document.getElementById('itemType').value;
-      const status = type === '카드사용' ? '계획된지출' : '계획';
       const item = {
         id: uid(),
         periodKey: document.getElementById('itemPeriodKey').value,
@@ -1156,7 +1318,7 @@
         category: document.getElementById('itemCategory').value,
         subcategory: document.getElementById('itemSubcategory').value,
         amount: getMoneyValue('itemAmount'),
-        status,
+        status: document.getElementById('itemStatus')?.value || (type === '부채' ? '현황' : '계획'),
         date: document.getElementById('itemDate').value,
         memo: document.getElementById('itemMemo').value.trim(),
         source: 'manual',
@@ -1166,6 +1328,7 @@
       };
       if (!item.amount) return alert('금액을 입력해주세요.');
       state.items.push(item);
+      applySavingEffect(item, 1);
       saveState();
       closeModal();
       renderAll();
@@ -1174,18 +1337,18 @@
     function openMoveConfirm(itemId) {
       const item = state.items.find(i => i.id === itemId);
       if (!item) return;
-      openModal('이동 / 확정', `
+      openModal('확정', `
         <div class="sub-card">
           <div class="row"><div class="label">분류</div><div class="value">${item.type}</div></div>
           <div class="row"><div class="label">카테고리</div><div class="value">${item.category}${item.subcategory ? ' · ' + item.subcategory : ''}</div></div>
         </div>
-        <label>현황으로 이동할 금액</label>
+        <label>확정 금액</label>
         ${moneyInput('moveAmount', item.amount)}
         <label>날짜</label>
         <input id="moveDate" type="date" value="${item.date || toInputDate(new Date())}" />
         <label>메모</label>
         <textarea id="moveMemo">${item.memo || ''}</textarea>
-        <button class="primary-btn" onclick="confirmMove('${item.id}')">확정</button>
+        <button class="primary-btn" onclick="confirmMove('${item.id}')">확정 저장</button>
       `);
     }
 
@@ -1196,7 +1359,7 @@
       item.date = document.getElementById('moveDate').value;
       item.memo = document.getElementById('moveMemo').value.trim();
       item.status = item.type === '변동지출' ? '실제지출' : '현황';
-      if (item.type === '저축/투자') updateAssetBySaving(item, item.amount);
+      applySavingEffect(item, 1);
       saveState();
       closeModal();
       renderAll();
@@ -1231,46 +1394,46 @@
       renderAll();
     }
 
-    function openAddDebt() {
-      const meta = getCurrentPeriodMeta();
-      openModal('부채 입력', `
-        <input type="hidden" id="itemType" value="부채" />
-        <input type="hidden" id="itemPeriodKey" value="${meta.key}" />
-        <label>카테고리</label>
-        <select id="itemCategory"></select>
-        <label>하위 카테고리</label>
-        <select id="itemSubcategory"></select>
-        <label>금액</label>
-        ${moneyInput('itemAmount')}
-        <label>날짜</label>
-        <input id="itemDate" type="date" value="${meta.start}" />
-        <label>메모</label>
-        <textarea id="itemMemo"></textarea>
-        <button class="primary-btn" onclick="saveDebt()">저장</button>
-      `);
-      bindCategorySelect('부채');
+    function openEditItem(itemId) {
+      const item = state.items.find(i => i.id === itemId);
+      if (!item) return;
+      openModal('내역 수정', buildItemForm(item.type, item.periodKey, item));
+      bindCategorySelect(item.type, item);
     }
 
-    function saveDebt() {
-      const item = {
-        id: uid(),
-        periodKey: document.getElementById('itemPeriodKey').value,
-        type: '부채',
-        category: document.getElementById('itemCategory').value,
-        subcategory: document.getElementById('itemSubcategory').value,
-        amount: getMoneyValue('itemAmount'),
-        status: '현황',
-        date: document.getElementById('itemDate').value,
-        memo: document.getElementById('itemMemo').value.trim(),
-        source: 'manual',
-        linkedAssetKey: '',
-        linkedFundType: '',
-        createdAt: new Date().toISOString()
-      };
+    function saveEditedItem() {
+      const itemId = document.getElementById('editItemId').value;
+      const item = state.items.find(i => i.id === itemId);
+      if (!item) return;
+
+      const oldItem = clone(item);
+
+      item.category = document.getElementById('itemCategory').value;
+      item.subcategory = document.getElementById('itemSubcategory').value;
+      item.status = document.getElementById('itemStatus')?.value || item.status;
+      item.amount = getMoneyValue('itemAmount');
+      item.date = document.getElementById('itemDate').value;
+      item.memo = document.getElementById('itemMemo').value.trim();
+
       if (!item.amount) return alert('금액을 입력해주세요.');
-      state.items.push(item);
+
+      applySavingEffect(oldItem, -1);
+      applySavingEffect(item, 1);
+
       saveState();
       closeModal();
+      renderAll(item.periodKey === getCurrentPeriodMeta().key ? undefined : 'ledger');
+    }
+
+    function deleteItem(itemId) {
+      const item = state.items.find(i => i.id === itemId);
+      if (!item) return;
+      if (!confirm('이 항목을 삭제할까요?')) return;
+
+      applySavingEffect(item, -1);
+      state.items = state.items.filter(i => i.id !== itemId);
+
+      saveState();
       renderAll();
     }
 
@@ -1328,9 +1491,10 @@
           `}
         </div>
       `).join('');
+
       openModal('자산 일괄 수정', `
         <label>기준일</label>
-        <input id="baselineDate" type="date" value="2026-03-12" />
+        <input id="baselineDate" type="date" value="${toInputDate(new Date())}" />
         ${rows}
         <button class="primary-btn" onclick="saveAssetBaseline()">저장</button>
       `);
@@ -1398,10 +1562,22 @@
       const date = document.getElementById('fundDate').value;
       const memo = document.getElementById('fundMemo').value.trim();
       if (!amount) return alert('금액을 입력해주세요.');
-      state.fundLedgers.push({ id: uid(), fundType, direction, amount, date, memo, createdAt: new Date().toISOString() });
+
+      state.fundLedgers.push({
+        id: uid(),
+        fundType,
+        direction,
+        amount,
+        date,
+        memo,
+        createdAt: new Date().toISOString()
+      });
+
       const asset = getAssetRecord('현금', fundType);
-      if (direction === '사용') asset.currentAmount -= amount; else asset.currentAmount += amount;
+      if (direction === '사용') asset.currentAmount -= amount;
+      else asset.currentAmount += amount;
       asset.editableAt = date;
+
       if (window.__fundExpenseLink && direction === '사용') {
         const current = getCurrentPeriodMeta();
         state.items.push({
@@ -1420,6 +1596,7 @@
           createdAt: new Date().toISOString()
         });
       }
+
       saveState();
       closeModal();
       renderAll();
@@ -1440,6 +1617,7 @@
           </select>
         </div>
       `).join('');
+
       openModal('반복 기본값 관리', `
         ${rows}
         <button class="primary-btn" onclick="saveRecurringRules()">저장</button>
@@ -1459,25 +1637,278 @@
       alert('반복 기본값이 저장되었습니다. 이후 급여월부터 반영돼요.');
     }
 
-    function deleteItem(itemId) {
-      if (!confirm('이 항목을 삭제할까요?')) return;
-      state.items = state.items.filter(i => i.id !== itemId);
+    function openBudgetEditor() {
+      const meta = getCurrentPeriodMeta();
+      const categories = Object.keys(getCategoryTree('변동지출'));
+      const current = state.budgetSettings?.[meta.key] || {};
+
+      openModal('카테고리별 예산 설정', `
+        <div class="help">${meta.title} 기준 예산입니다.</div>
+        ${categories.map(category => `
+          <label>${category}</label>
+          ${moneyInput(`budget_${escapeId(category)}`, current[category] || '')}
+        `).join('')}
+        <button class="primary-btn" onclick="saveBudgetSettings()">저장</button>
+      `);
+    }
+
+    function escapeId(value) {
+      return value.replace(/[^a-zA-Z0-9가-힣_-]/g, '_');
+    }
+
+    function saveBudgetSettings() {
+      const meta = getCurrentPeriodMeta();
+      const categories = Object.keys(getCategoryTree('변동지출'));
+      if (!state.budgetSettings[meta.key]) state.budgetSettings[meta.key] = {};
+      categories.forEach(category => {
+        const value = getMoneyValue(`budget_${escapeId(category)}`);
+        if (value > 0) state.budgetSettings[meta.key][category] = value;
+        else delete state.budgetSettings[meta.key][category];
+      });
       saveState();
+      closeModal();
       renderAll();
+    }
+
+    function isCategoryUsed(type, category, subcategory = null) {
+      if (subcategory === null) {
+        return state.items.some(i => i.type === type && i.category === category)
+          || state.recurringRules.some(r => r.type === type && r.category === category);
+      }
+      return state.items.some(i => i.type === type && i.category === category && (i.subcategory || '') === subcategory)
+        || state.recurringRules.some(r => r.type === type && r.category === category && (r.subcategory || '') === subcategory);
+    }
+
+    function openCategoryManager(type = '변동지출') {
+      openModal('카테고리 관리', buildCategoryManagerHtml(type));
+    }
+
+    function buildCategoryManagerHtml(type) {
+      const tree = getCategoryTree(type);
+      return `
+        <label>구분</label>
+        <select id="categoryManageType" onchange="rerenderCategoryManager()">
+          ${getEditableCategoryTypes().map(t => `<option value="${t}" ${t === type ? 'selected' : ''}>${t}</option>`).join('')}
+        </select>
+
+        <div class="actions" style="margin-bottom:10px;">
+          <button class="small-btn" onclick="addMainCategory()">대분류 추가</button>
+        </div>
+
+        ${Object.entries(tree).map(([category, subs]) => `
+          <div class="sub-card">
+            <div class="section-head">
+              <div class="item-title">${category}</div>
+              <div class="actions" style="margin-top:0;">
+                <button class="small-btn" onclick="renameMainCategory('${escapeJs(type)}','${escapeJs(category)}')">이름변경</button>
+                <button class="danger-btn" onclick="deleteMainCategory('${escapeJs(type)}','${escapeJs(category)}')">삭제</button>
+              </div>
+            </div>
+
+            <div class="chips" style="margin-bottom:10px;">
+              ${subs.length ? subs.map(sub => `
+                <span class="chip">${sub}</span>
+              `).join('') : `<span class="muted">하위 카테고리 없음</span>`}
+            </div>
+
+            ${subs.map(sub => `
+              <div class="row">
+                <div class="label">${sub}</div>
+                <div class="actions" style="margin-top:0;">
+                  <button class="small-btn" onclick="renameSubCategory('${escapeJs(type)}','${escapeJs(category)}','${escapeJs(sub)}')">이름변경</button>
+                  <button class="danger-btn" onclick="deleteSubCategory('${escapeJs(type)}','${escapeJs(category)}','${escapeJs(sub)}')">삭제</button>
+                </div>
+              </div>
+            `).join('')}
+
+            <div class="actions">
+              <button class="small-btn" onclick="addSubCategory('${escapeJs(type)}','${escapeJs(category)}')">하위 카테고리 추가</button>
+            </div>
+          </div>
+        `).join('')}
+      `;
+    }
+
+    function escapeJs(str) {
+      return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+
+    function rerenderCategoryManager() {
+      const type = document.getElementById('categoryManageType').value;
+      document.getElementById('modalBody').innerHTML = buildCategoryManagerHtml(type);
+    }
+
+    function getCustomTreeForEdit(type) {
+      const current = state.customCategories[type] ? clone(state.customCategories[type]) : clone(CATEGORY_BASE[type] || {});
+      return current;
+    }
+
+    function addMainCategory() {
+      const type = document.getElementById('categoryManageType').value;
+      const name = prompt('추가할 대분류 이름');
+      if (!name) return;
+      const tree = getCustomTreeForEdit(type);
+      if (tree[name]) return alert('이미 있는 카테고리입니다.');
+      tree[name] = [];
+      state.customCategories[type] = tree;
+      saveState();
+      rerenderCategoryManager();
+      renderAll();
+    }
+
+    function renameMainCategory(type, oldName) {
+      const newName = prompt('새 대분류 이름', oldName);
+      if (!newName || newName === oldName) return;
+      const tree = getCustomTreeForEdit(type);
+      if (tree[newName]) return alert('이미 있는 이름입니다.');
+      tree[newName] = tree[oldName] || [];
+      delete tree[oldName];
+      state.customCategories[type] = tree;
+
+      state.items.forEach(item => {
+        if (item.type === type && item.category === oldName) item.category = newName;
+      });
+      state.recurringRules.forEach(rule => {
+        if (rule.type === type && rule.category === oldName) rule.category = newName;
+      });
+
+      if (type === '변동지출' && state.budgetSettings) {
+        Object.keys(state.budgetSettings).forEach(periodKey => {
+          if (state.budgetSettings[periodKey][oldName] != null) {
+            state.budgetSettings[periodKey][newName] = state.budgetSettings[periodKey][oldName];
+            delete state.budgetSettings[periodKey][oldName];
+          }
+        });
+      }
+
+      saveState();
+      rerenderCategoryManager();
+      renderAll();
+    }
+
+    function deleteMainCategory(type, category) {
+      if (isCategoryUsed(type, category)) {
+        return alert('이미 사용 중인 카테고리라 삭제할 수 없어요.');
+      }
+      if (!confirm(`"${category}" 카테고리를 삭제할까요?`)) return;
+      const tree = getCustomTreeForEdit(type);
+      delete tree[category];
+      state.customCategories[type] = tree;
+      if (type === '변동지출' && state.budgetSettings) {
+        Object.keys(state.budgetSettings).forEach(periodKey => {
+          delete state.budgetSettings[periodKey][category];
+        });
+      }
+      saveState();
+      rerenderCategoryManager();
+      renderAll();
+    }
+
+    function addSubCategory(type, category) {
+      const name = prompt('추가할 하위 카테고리 이름');
+      if (!name) return;
+      const tree = getCustomTreeForEdit(type);
+      tree[category] = tree[category] || [];
+      if (tree[category].includes(name)) return alert('이미 있는 하위 카테고리입니다.');
+      tree[category].push(name);
+      state.customCategories[type] = tree;
+      saveState();
+      rerenderCategoryManager();
+      renderAll();
+    }
+
+    function renameSubCategory(type, category, oldName) {
+      const newName = prompt('새 하위 카테고리 이름', oldName);
+      if (!newName || newName === oldName) return;
+      const tree = getCustomTreeForEdit(type);
+      if ((tree[category] || []).includes(newName)) return alert('이미 있는 이름입니다.');
+      tree[category] = (tree[category] || []).map(sub => sub === oldName ? newName : sub);
+      state.customCategories[type] = tree;
+
+      state.items.forEach(item => {
+        if (item.type === type && item.category === category && (item.subcategory || '') === oldName) item.subcategory = newName;
+      });
+      state.recurringRules.forEach(rule => {
+        if (rule.type === type && rule.category === category && (rule.subcategory || '') === oldName) rule.subcategory = newName;
+      });
+
+      saveState();
+      rerenderCategoryManager();
+      renderAll();
+    }
+
+    function deleteSubCategory(type, category, sub) {
+      if (isCategoryUsed(type, category, sub)) {
+        return alert('이미 사용 중인 하위 카테고리라 삭제할 수 없어요.');
+      }
+      if (!confirm(`"${sub}" 하위 카테고리를 삭제할까요?`)) return;
+      const tree = getCustomTreeForEdit(type);
+      tree[category] = (tree[category] || []).filter(v => v !== sub);
+      state.customCategories[type] = tree;
+      saveState();
+      rerenderCategoryManager();
+      renderAll();
+    }
+
+    function exportData() {
+      const payload = {
+        exportedAt: new Date().toISOString(),
+        version: APP_VERSION,
+        appKey: APP_KEY,
+        data: state
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `salary-budget-backup-${toInputDate(new Date())}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function triggerImport() {
+      document.getElementById('importFileInput').click();
+    }
+
+    async function handleImportFile(event) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        const incoming = parsed.data || parsed;
+        if (!incoming || typeof incoming !== 'object') {
+          alert('올바른 백업 파일이 아니에요.');
+          event.target.value = '';
+          return;
+        }
+        if (!confirm('현재 데이터를 백업 파일 데이터로 교체할까요?')) {
+          event.target.value = '';
+          return;
+        }
+        state = migrateState(incoming);
+        saveState();
+        renderAll('home');
+        alert('데이터를 가져왔어요.');
+      } catch (e) {
+        console.error(e);
+        alert('가져오기에 실패했어요. JSON 파일인지 확인해주세요.');
+      } finally {
+        event.target.value = '';
+      }
     }
 
     function saveSettings() {
       const salaryDay = Number(document.getElementById('salaryDayInput').value || 25);
       if (salaryDay < 1 || salaryDay > 28) return alert('월급일은 1~28일로 입력해주세요.');
       state.salaryDay = salaryDay;
-      const allPeriodKeys = Object.keys(state.periods);
-      state.periods = {};
       state.monthOffset = 0;
+      const newPeriods = {};
       for (let i = -12; i <= 12; i++) {
         const key = getPeriodKey(i, state.salaryDay);
-        state.periods[key] = getDefaultPeriodMeta(i, state.salaryDay);
-        createRecurringItemsForPeriod(key, state.periods[key].start, i);
+        newPeriods[key] = state.periods[key] || getDefaultPeriodMeta(i, state.salaryDay);
+        createRecurringItemsForPeriod(key, newPeriods[key].start);
       }
+      state.periods = newPeriods;
       saveState();
       renderAll();
       alert('설정이 저장되었습니다.');
@@ -1521,6 +1952,8 @@
     document.getElementById('modal').addEventListener('click', (e) => {
       if (e.target.id === 'modal') closeModal();
     });
+
+    document.getElementById('importFileInput').addEventListener('change', handleImportFile);
 
     for (let i = -2; i <= 3; i++) ensurePeriod(i);
     saveState();
