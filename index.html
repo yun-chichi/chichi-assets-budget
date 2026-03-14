@@ -272,6 +272,47 @@
       font-size: 11px;
       font-weight: 700;
     }
+    .summary-strip {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .summary-mini {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 10px;
+      background: #fafcff;
+    }
+    .summary-mini .mini-label {
+      font-size: 12px;
+      color: var(--sub);
+      margin-bottom: 6px;
+    }
+    .summary-mini .mini-value {
+      font-size: 16px;
+      font-weight: 800;
+    }
+    .row-inline-budget {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .row-inline-budget .budget-label {
+      width: 110px;
+      flex: 0 0 110px;
+      font-size: 14px;
+      color: var(--sub);
+      font-weight: 700;
+    }
+    .row-inline-budget .budget-input {
+      flex: 1;
+    }
+    button:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
   </style>
 </head>
 <body>
@@ -306,7 +347,7 @@
   <script>
     const APP_KEY = 'salary-budget-master-v2';
     const LEGACY_KEYS = ['salary-budget-master-v1'];
-    const APP_VERSION = '2.1.0';
+    const APP_VERSION = '2.2.0';
 
     function clone(obj) {
       return JSON.parse(JSON.stringify(obj));
@@ -333,7 +374,7 @@
       '수입': {
         '월급': [],
         '수당': ['통계활동비', '정근수당', '명절수당', '출장비', '성과급'],
-        '기타': []
+        '기타': ['용돈추가']
       },
       '저축/투자': {
         '현금': ['입출금통장', '예금', '적금', '비상금', '경조사'],
@@ -758,16 +799,35 @@
 
     function computeSummary(periodKey) {
       const items = getItemsByPeriod(periodKey);
+
       const income = sumBy(items.filter(i => i.type === '수입' && i.status === '현황'), i => i.amount);
       const saving = sumBy(items.filter(i => i.type === '저축/투자' && i.status === '현황'), i => i.amount);
       const fixed = sumBy(items.filter(i => i.type === '고정지출' && i.status === '현황'), i => i.amount);
+
       const allowance = income - saving - fixed;
+
       const actualExpense = sumBy(items.filter(i => i.status === '실제지출'), i => i.amount);
-      const plannedExpense = sumBy(items.filter(i => i.status === '계획된지출'), i => i.amount);
-      const usedBudget = actualExpense + plannedExpense;
+      const plannedCardExpense = sumBy(items.filter(i => i.type === '카드사용' && i.status === '계획된지출'), i => i.amount);
+      const plannedVariableExpense = sumBy(items.filter(i => i.type === '변동지출' && i.status === '계획'), i => i.amount);
+      const plannedExpense = plannedCardExpense + plannedVariableExpense;
+
+      const usedBudget = actualExpense + plannedCardExpense;
       const spare = allowance - usedBudget;
       const spendRate = allowance > 0 ? Math.min(100, Math.max(0, (usedBudget / allowance) * 100)) : 0;
-      return { income, saving, fixed, allowance, actualExpense, plannedExpense, usedBudget, spare, spendRate };
+
+      return {
+        income,
+        saving,
+        fixed,
+        allowance,
+        actualExpense,
+        plannedCardExpense,
+        plannedVariableExpense,
+        plannedExpense,
+        usedBudget,
+        spare,
+        spendRate
+      };
     }
 
     function topCategoryUsage(periodKey) {
@@ -837,15 +897,9 @@
     }
 
     function getStatusOptions(type) {
-      if (type === '변동지출') {
-        return ['계획', '실제지출'];
-      }
-      if (type === '카드사용') {
-        return ['계획된지출', '실제지출'];
-      }
-      if (type === '부채') {
-        return ['현황'];
-      }
+      if (type === '변동지출') return ['계획', '실제지출'];
+      if (type === '카드사용') return ['계획된지출', '실제지출'];
+      if (type === '부채') return ['현황'];
       return ['계획', '현황'];
     }
 
@@ -865,25 +919,49 @@
       const meta = state.periods[periodKey];
       const today = toInputDate(new Date());
       const defaultDate = item?.date || today;
-      const selectedStatus = item?.status || (type === '카드사용' ? '계획된지출' : type === '부채' ? '현황' : '계획');
+      const actualType = item?.type || type;
+      const selectedStatus = item?.status || (
+        actualType === '카드사용' ? '계획된지출' :
+        actualType === '부채' ? '현황' :
+        '계획'
+      );
       const memo = item?.memo || '';
       const amount = item?.amount || '';
+      const isExpenseUnified = type === '지출통합';
+
       return `
         <input type="hidden" id="itemType" value="${type}" />
         <input type="hidden" id="itemPeriodKey" value="${periodKey}" />
         ${item ? `<input type="hidden" id="editItemId" value="${item.id}" />` : ''}
+
+        ${isExpenseUnified ? `
+          <label>지출 방식</label>
+          <select id="expenseMethod" onchange="onExpenseMethodChange()">
+            <option value="변동지출" ${actualType === '변동지출' ? 'selected' : ''}>현금/체크/계좌이체</option>
+            <option value="카드사용" ${actualType === '카드사용' ? 'selected' : ''}>카드사용</option>
+          </select>
+        ` : ''}
+
         <label>카테고리</label>
         <select id="itemCategory"></select>
+
         <label>하위 카테고리</label>
         <select id="itemSubcategory"></select>
+
         <label>상태</label>
-        ${buildStatusSelect(type, selectedStatus)}
+        <div id="itemStatusWrap">
+          ${buildStatusSelect(isExpenseUnified ? actualType : type, selectedStatus)}
+        </div>
+
         <label>금액</label>
         ${moneyInput('itemAmount', amount)}
+
         <label>날짜</label>
         <input id="itemDate" type="date" value="${defaultDate || meta?.start || today}" />
+
         <label>메모</label>
         <textarea id="itemMemo" placeholder="메모를 입력하세요">${memo}</textarea>
+
         <button class="primary-btn" onclick="${item ? 'saveEditedItem()' : 'saveNewItem()'}">저장</button>
       `;
     }
@@ -891,22 +969,57 @@
     function bindCategorySelect(type, item = null) {
       const categorySelect = document.getElementById('itemCategory');
       const subSelect = document.getElementById('itemSubcategory');
-      const tree = getCategoryTree(type);
+
+      let actualType = type;
+      if (type === '지출통합') {
+        actualType = document.getElementById('expenseMethod')?.value || item?.type || '변동지출';
+      }
+
+      const tree = getCategoryTree(actualType);
       const cats = Object.keys(tree);
+
       if (!cats.length) {
         categorySelect.innerHTML = `<option value="">카테고리 없음</option>`;
         subSelect.innerHTML = `<option value="">선택 안 함</option>`;
         return;
       }
+
       categorySelect.innerHTML = cats.map(c => `<option value="${c}">${c}</option>`).join('');
+
       function updateSubs() {
         const subs = tree[categorySelect.value] || [];
         subSelect.innerHTML = `<option value="">선택 안 함</option>` + subs.map(s => `<option value="${s}">${s}</option>`).join('');
       }
+
       categorySelect.onchange = updateSubs;
       categorySelect.value = item?.category && cats.includes(item.category) ? item.category : cats[0];
       updateSubs();
       if (item?.subcategory) subSelect.value = item.subcategory;
+    }
+
+    function onExpenseMethodChange() {
+      const actualType = document.getElementById('expenseMethod').value;
+      document.getElementById('itemStatusWrap').innerHTML = buildStatusSelect(
+        actualType,
+        actualType === '카드사용' ? '계획된지출' : '계획'
+      );
+      bindCategorySelect('지출통합');
+    }
+
+    function getSectionTotal(items) {
+      return sumBy(items, i => i.amount);
+    }
+
+    function buildLedgerSection(title, items, emptyText = '내역이 없어요.') {
+      return `
+        <div class="card">
+          <div class="section-head">
+            <div class="section-title">${title}</div>
+            <div class="value">${formatMoney(getSectionTotal(items))}</div>
+          </div>
+          ${items.length ? items.map(renderItemCard).join('') : `<div class="empty">${emptyText}</div>`}
+        </div>
+      `;
     }
 
     function renderHome() {
@@ -963,7 +1076,9 @@
           </div>
           <div class="row"><div class="label">이번달 용돈</div><div class="value">${formatMoney(summary.allowance)}</div></div>
           <div class="row"><div class="label">현재까지 실제 지출</div><div class="value">${formatMoney(summary.actualExpense)}</div></div>
-          <div class="row"><div class="label">계획된 지출</div><div class="value">${formatMoney(summary.plannedExpense)}</div></div>
+          <div class="row"><div class="label">계획된 카드사용</div><div class="value">${formatMoney(summary.plannedCardExpense)}</div></div>
+          <div class="row"><div class="label">계획된 변동지출</div><div class="value">${formatMoney(summary.plannedVariableExpense)}</div></div>
+          <div class="row"><div class="label">계획된 지출 합계</div><div class="value">${formatMoney(summary.plannedExpense)}</div></div>
           <div class="row"><div class="label">예산 내 여유 금액</div><div class="value">${formatMoney(summary.spare)}</div></div>
         </div>
 
@@ -975,7 +1090,7 @@
           <div class="row"><div class="label">수입 합계(현황)</div><div class="value">${formatMoney(summary.income)}</div></div>
           <div class="row"><div class="label">저축/투자 합계(현황)</div><div class="value">${formatMoney(summary.saving)}</div></div>
           <div class="row"><div class="label">고정지출 합계(현황)</div><div class="value">${formatMoney(summary.fixed)}</div></div>
-          <div class="row"><div class="label">변동지출 계획 합계</div><div class="value">${formatMoney(sumBy(getItemsByPeriod(meta.key).filter(i => i.type === '변동지출' && i.status === '계획'), i => i.amount))}</div></div>
+          <div class="row"><div class="label">변동지출 계획 합계</div><div class="value">${formatMoney(summary.plannedVariableExpense)}</div></div>
           <div class="row"><div class="label">이번달 예상 용돈</div><div class="value">${formatMoney(summary.allowance)}</div></div>
         </div>
 
@@ -1003,8 +1118,8 @@
           <div class="fab-wrap">
             <button class="fab" onclick="openAddItem('수입')">수입 추가</button>
             <button class="fab" onclick="openAddItem('저축/투자')">저축/투자 추가</button>
-            <button class="fab" onclick="openAddItem('변동지출')">변동지출 입력</button>
-            <button class="fab" onclick="openAddItem('카드사용')">카드사용 입력</button>
+            <button class="fab" onclick="openAddExpense()">지출 입력</button>
+            <button class="fab" onclick="openAllowanceTransfer()">용돈 보내기</button>
           </div>
         </div>
       `;
@@ -1016,19 +1131,25 @@
         : item.status === '계획된지출'
           ? 'card'
           : 'actual';
+
       const sub = item.subcategory ? ` · ${item.subcategory}` : '';
       const actions = [];
       actions.push(`<button class="small-btn" onclick="openEditItem('${item.id}')">수정</button>`);
+
       if (item.status === '계획') {
         actions.push(`<button class="small-btn" onclick="openMoveConfirm('${item.id}')">확정</button>`);
       }
+
       if (item.type === '카드사용' && item.status === '계획된지출') {
         actions.push(`<button class="small-btn" onclick="openCardPay('${item.id}')">즉시결제</button>`);
       }
+
       if (item.type === '저축/투자' && item.category === '현금' && (item.subcategory === '비상금' || item.subcategory === '경조사') && item.status === '현황') {
         actions.push(`<button class="small-btn" onclick="openFundLedger('${item.subcategory}')">세부내역</button>`);
       }
+
       actions.push(`<button class="danger-btn" onclick="deleteItem('${item.id}')">삭제</button>`);
+
       return `
         <div class="list-card">
           <div class="list-top">
@@ -1049,9 +1170,21 @@
     function renderLedger() {
       const meta = getCurrentPeriodMeta();
       const items = getItemsByPeriod(meta.key);
+
       const plans = sortByDateDesc(items.filter(i => i.status === '계획'));
-      const cardPlanned = sortByDateDesc(items.filter(i => i.status === '계획된지출'));
-      const actuals = sortByDateDesc(items.filter(i => i.status === '현황' || i.status === '실제지출'));
+      const plannedExpense = sortByDateDesc(items.filter(i => i.status === '계획된지출'));
+
+      const actualIncome = sortByDateDesc(items.filter(i => i.type === '수입' && i.status === '현황'));
+      const actualSaving = sortByDateDesc(items.filter(i => i.type === '저축/투자' && i.status === '현황'));
+      const actualFixed = sortByDateDesc(items.filter(i => i.type === '고정지출' && i.status === '현황'));
+      const actualVariable = sortByDateDesc(items.filter(i => i.type === '변동지출' && i.status === '실제지출'));
+      const actualCard = sortByDateDesc(items.filter(i => i.type === '카드사용' && i.status === '실제지출'));
+      const actualDebt = sortByDateDesc(items.filter(i => i.type === '부채' && i.status === '현황'));
+
+      const planIncome = sumBy(plans.filter(i => i.type === '수입'), i => i.amount);
+      const planSaving = sumBy(plans.filter(i => i.type === '저축/투자'), i => i.amount);
+      const planFixed = sumBy(plans.filter(i => i.type === '고정지출'), i => i.amount);
+      const planVariable = sumBy(plans.filter(i => i.type === '변동지출'), i => i.amount);
 
       document.getElementById('page-ledger').innerHTML = `
         <div class="card">
@@ -1063,23 +1196,45 @@
             <button class="fab" onclick="openAddItem('수입')">수입 입력</button>
             <button class="fab" onclick="openAddItem('저축/투자')">저축 입력</button>
             <button class="fab" onclick="openAddItem('고정지출')">고정지출 입력</button>
-            <button class="fab" onclick="openAddItem('변동지출')">변동지출 입력</button>
-            <button class="fab" onclick="openAddItem('카드사용')">카드사용 입력</button>
+            <button class="fab" onclick="openAddExpense()">지출 입력</button>
             <button class="fab" onclick="openAddDebt()">부채 입력</button>
+            <button class="fab" onclick="openAllowanceTransfer()">용돈 보내기</button>
           </div>
         </div>
+
         <div class="card">
-          <div class="section-head"><div class="section-title">계획</div></div>
-          ${plans.length ? plans.map(renderItemCard).join('') : `<div class="empty">등록된 계획이 없어요.</div>`}
+          <div class="section-head">
+            <div class="section-title">계획 합계</div>
+            <div class="value">${formatMoney(getSectionTotal(plans))}</div>
+          </div>
+          <div class="summary-strip">
+            <div class="summary-mini">
+              <div class="mini-label">수입 계획</div>
+              <div class="mini-value">${formatMoney(planIncome)}</div>
+            </div>
+            <div class="summary-mini">
+              <div class="mini-label">저축/투자 계획</div>
+              <div class="mini-value">${formatMoney(planSaving)}</div>
+            </div>
+            <div class="summary-mini">
+              <div class="mini-label">고정지출 계획</div>
+              <div class="mini-value">${formatMoney(planFixed)}</div>
+            </div>
+            <div class="summary-mini">
+              <div class="mini-label">변동지출 계획</div>
+              <div class="mini-value">${formatMoney(planVariable)}</div>
+            </div>
+          </div>
         </div>
-        <div class="card">
-          <div class="section-head"><div class="section-title">계획된 지출 / 카드결제예정</div></div>
-          ${cardPlanned.length ? cardPlanned.map(renderItemCard).join('') : `<div class="empty">계획된 지출이 없어요.</div>`}
-        </div>
-        <div class="card">
-          <div class="section-head"><div class="section-title">현황 (최신순)</div></div>
-          ${actuals.length ? actuals.map(renderItemCard).join('') : `<div class="empty">현황 내역이 없어요.</div>`}
-        </div>
+
+        ${buildLedgerSection('계획', plans, '등록된 계획이 없어요.')}
+        ${buildLedgerSection('계획된 지출', plannedExpense, '계획된 지출이 없어요.')}
+        ${buildLedgerSection('현황 · 수입', actualIncome, '수입 현황이 없어요.')}
+        ${buildLedgerSection('현황 · 저축/투자', actualSaving, '저축/투자 현황이 없어요.')}
+        ${buildLedgerSection('현황 · 고정지출', actualFixed, '고정지출 현황이 없어요.')}
+        ${buildLedgerSection('현황 · 변동지출', actualVariable, '변동지출 현황이 없어요.')}
+        ${buildLedgerSection('현황 · 카드사용', actualCard, '카드사용 현황이 없어요.')}
+        ${buildLedgerSection('현황 · 부채', actualDebt, '부채 현황이 없어요.')}
       `;
     }
 
@@ -1156,7 +1311,12 @@
       });
 
       const catRows = Object.entries(categoryMap).sort((a, b) => b[1] - a[1]);
-      const subRows = Object.entries(subMap).sort((a, b) => b[1] - a[1]);
+      const subRows = Object.entries(subMap).sort((a, b) => {
+        const [aCategory, aSub] = a[0].split(' > ');
+        const [bCategory, bSub] = b[0].split(' > ');
+        if (aCategory !== bCategory) return aCategory.localeCompare(bCategory, 'ko');
+        return aSub.localeCompare(bSub, 'ko');
+      });
       const budgetRows = topCategoryUsage(meta.key);
 
       document.getElementById('page-reports').innerHTML = `
@@ -1278,7 +1438,7 @@
             <input id="periodEnd" type="date" value="${meta.end}" />
           </div>
         </div>
-        <div class="help">이 급여월을 수정하면 이후 급여월 기본 기간도 다시 계산돼요.</div>
+        <div class="help">이 급여월의 제목과 날짜를 직접 수정할 수 있어요.</div>
         <button class="primary-btn" onclick="savePeriodMeta()">저장</button>
       `);
     }
@@ -1303,6 +1463,12 @@
       bindCategorySelect(type);
     }
 
+    function openAddExpense() {
+      const meta = getCurrentPeriodMeta();
+      openModal('지출 입력', buildItemForm('지출통합', meta.key));
+      bindCategorySelect('지출통합');
+    }
+
     function openAddDebt() {
       const meta = getCurrentPeriodMeta();
       openModal('부채 입력', buildItemForm('부채', meta.key));
@@ -1310,15 +1476,19 @@
     }
 
     function saveNewItem() {
-      const type = document.getElementById('itemType').value;
+      const formType = document.getElementById('itemType').value;
+      const actualType = formType === '지출통합'
+        ? (document.getElementById('expenseMethod')?.value || '변동지출')
+        : formType;
+
       const item = {
         id: uid(),
         periodKey: document.getElementById('itemPeriodKey').value,
-        type,
+        type: actualType,
         category: document.getElementById('itemCategory').value,
         subcategory: document.getElementById('itemSubcategory').value,
         amount: getMoneyValue('itemAmount'),
-        status: document.getElementById('itemStatus')?.value || (type === '부채' ? '현황' : '계획'),
+        status: document.getElementById('itemStatus')?.value || (actualType === '부채' ? '현황' : '계획'),
         date: document.getElementById('itemDate').value,
         memo: document.getElementById('itemMemo').value.trim(),
         source: 'manual',
@@ -1326,7 +1496,9 @@
         linkedFundType: '',
         createdAt: new Date().toISOString()
       };
+
       if (!item.amount) return alert('금액을 입력해주세요.');
+
       state.items.push(item);
       applySavingEffect(item, 1);
       saveState();
@@ -1397,8 +1569,9 @@
     function openEditItem(itemId) {
       const item = state.items.find(i => i.id === itemId);
       if (!item) return;
-      openModal('내역 수정', buildItemForm(item.type, item.periodKey, item));
-      bindCategorySelect(item.type, item);
+      const formType = ['변동지출', '카드사용'].includes(item.type) ? '지출통합' : item.type;
+      openModal('내역 수정', buildItemForm(formType, item.periodKey, item));
+      bindCategorySelect(formType, item);
     }
 
     function saveEditedItem() {
@@ -1408,6 +1581,12 @@
 
       const oldItem = clone(item);
 
+      const formType = document.getElementById('itemType').value;
+      const actualType = formType === '지출통합'
+        ? (document.getElementById('expenseMethod')?.value || '변동지출')
+        : formType;
+
+      item.type = actualType;
       item.category = document.getElementById('itemCategory').value;
       item.subcategory = document.getElementById('itemSubcategory').value;
       item.status = document.getElementById('itemStatus')?.value || item.status;
@@ -1422,7 +1601,7 @@
 
       saveState();
       closeModal();
-      renderAll(item.periodKey === getCurrentPeriodMeta().key ? undefined : 'ledger');
+      renderAll();
     }
 
     function deleteItem(itemId) {
@@ -1434,6 +1613,64 @@
       state.items = state.items.filter(i => i.id !== itemId);
 
       saveState();
+      renderAll();
+    }
+
+    function openAllowanceTransfer() {
+      const meta = getCurrentPeriodMeta();
+      const incomeItems = getItemsByPeriod(meta.key).filter(i => i.type === '수입' && i.status === '현황');
+
+      openModal('수입에서 용돈 보내기', `
+        <label>기준 수입 선택</label>
+        <select id="allowanceSourceItemId">
+          <option value="">선택 안 함</option>
+          ${incomeItems.map(item => `
+            <option value="${item.id}">
+              ${item.category}${item.subcategory ? ' · ' + item.subcategory : ''} / ${formatMoney(item.amount)} / ${item.date || ''}
+            </option>
+          `).join('')}
+        </select>
+
+        <label>보낼 금액</label>
+        ${moneyInput('allowanceAmount')}
+
+        <label>날짜</label>
+        <input id="allowanceDate" type="date" value="${toInputDate(new Date())}" />
+
+        <label>메모</label>
+        <textarea id="allowanceMemo" placeholder="예: 이번 달 용돈 추가"></textarea>
+
+        <button class="primary-btn" onclick="saveAllowanceTransfer()">저장</button>
+      `);
+    }
+
+    function saveAllowanceTransfer() {
+      const meta = getCurrentPeriodMeta();
+      const amount = getMoneyValue('allowanceAmount');
+      const date = document.getElementById('allowanceDate').value;
+      const memo = document.getElementById('allowanceMemo').value.trim();
+      const sourceItemId = document.getElementById('allowanceSourceItemId').value;
+
+      if (!amount) return alert('금액을 입력해주세요.');
+
+      state.items.push({
+        id: uid(),
+        periodKey: meta.key,
+        type: '수입',
+        category: '기타',
+        subcategory: '용돈추가',
+        amount,
+        status: '현황',
+        date,
+        memo: sourceItemId ? `[수입이체] ${memo}` : `[용돈추가] ${memo}`,
+        source: 'allowance-transfer',
+        linkedAssetKey: '',
+        linkedFundType: '',
+        createdAt: new Date().toISOString()
+      });
+
+      saveState();
+      closeModal();
       renderAll();
     }
 
@@ -1637,6 +1874,10 @@
       alert('반복 기본값이 저장되었습니다. 이후 급여월부터 반영돼요.');
     }
 
+    function escapeId(value) {
+      return value.replace(/[^a-zA-Z0-9가-힣_-]/g, '_');
+    }
+
     function openBudgetEditor() {
       const meta = getCurrentPeriodMeta();
       const categories = Object.keys(getCategoryTree('변동지출'));
@@ -1645,15 +1886,15 @@
       openModal('카테고리별 예산 설정', `
         <div class="help">${meta.title} 기준 예산입니다.</div>
         ${categories.map(category => `
-          <label>${category}</label>
-          ${moneyInput(`budget_${escapeId(category)}`, current[category] || '')}
+          <div class="row-inline-budget">
+            <div class="budget-label">${category}</div>
+            <div class="budget-input">
+              ${moneyInput(`budget_${escapeId(category)}`, current[category] || '')}
+            </div>
+          </div>
         `).join('')}
         <button class="primary-btn" onclick="saveBudgetSettings()">저장</button>
       `);
-    }
-
-    function escapeId(value) {
-      return value.replace(/[^a-zA-Z0-9가-힣_-]/g, '_');
     }
 
     function saveBudgetSettings() {
@@ -1670,6 +1911,10 @@
       renderAll();
     }
 
+    function escapeJs(str) {
+      return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+
     function isCategoryUsed(type, category, subcategory = null) {
       if (subcategory === null) {
         return state.items.some(i => i.type === type && i.category === category)
@@ -1679,12 +1924,19 @@
         || state.recurringRules.some(r => r.type === type && r.category === category && (r.subcategory || '') === subcategory);
     }
 
+    function getCustomTreeForEdit(type) {
+      const current = state.customCategories[type] ? clone(state.customCategories[type]) : clone(CATEGORY_BASE[type] || {});
+      return current;
+    }
+
     function openCategoryManager(type = '변동지출') {
       openModal('카테고리 관리', buildCategoryManagerHtml(type));
     }
 
     function buildCategoryManagerHtml(type) {
       const tree = getCategoryTree(type);
+      const entries = Object.entries(tree);
+
       return `
         <label>구분</label>
         <select id="categoryManageType" onchange="rerenderCategoryManager()">
@@ -1695,31 +1947,29 @@
           <button class="small-btn" onclick="addMainCategory()">대분류 추가</button>
         </div>
 
-        ${Object.entries(tree).map(([category, subs]) => `
+        ${entries.map(([category, subs], idx) => `
           <div class="sub-card">
             <div class="section-head">
               <div class="item-title">${category}</div>
               <div class="actions" style="margin-top:0;">
+                <button class="small-btn" onclick="moveMainCategory('${escapeJs(type)}','${escapeJs(category)}','up')" ${idx === 0 ? 'disabled' : ''}>↑</button>
+                <button class="small-btn" onclick="moveMainCategory('${escapeJs(type)}','${escapeJs(category)}','down')" ${idx === entries.length - 1 ? 'disabled' : ''}>↓</button>
                 <button class="small-btn" onclick="renameMainCategory('${escapeJs(type)}','${escapeJs(category)}')">이름변경</button>
                 <button class="danger-btn" onclick="deleteMainCategory('${escapeJs(type)}','${escapeJs(category)}')">삭제</button>
               </div>
             </div>
 
-            <div class="chips" style="margin-bottom:10px;">
-              ${subs.length ? subs.map(sub => `
-                <span class="chip">${sub}</span>
-              `).join('') : `<span class="muted">하위 카테고리 없음</span>`}
-            </div>
-
-            ${subs.map(sub => `
+            ${subs.length ? subs.map((sub, subIdx) => `
               <div class="row">
                 <div class="label">${sub}</div>
                 <div class="actions" style="margin-top:0;">
+                  <button class="small-btn" onclick="moveSubCategory('${escapeJs(type)}','${escapeJs(category)}','${escapeJs(sub)}','up')" ${subIdx === 0 ? 'disabled' : ''}>↑</button>
+                  <button class="small-btn" onclick="moveSubCategory('${escapeJs(type)}','${escapeJs(category)}','${escapeJs(sub)}','down')" ${subIdx === subs.length - 1 ? 'disabled' : ''}>↓</button>
                   <button class="small-btn" onclick="renameSubCategory('${escapeJs(type)}','${escapeJs(category)}','${escapeJs(sub)}')">이름변경</button>
                   <button class="danger-btn" onclick="deleteSubCategory('${escapeJs(type)}','${escapeJs(category)}','${escapeJs(sub)}')">삭제</button>
                 </div>
               </div>
-            `).join('')}
+            `).join('') : `<div class="muted" style="margin-bottom:10px;">하위 카테고리 없음</div>`}
 
             <div class="actions">
               <button class="small-btn" onclick="addSubCategory('${escapeJs(type)}','${escapeJs(category)}')">하위 카테고리 추가</button>
@@ -1729,18 +1979,9 @@
       `;
     }
 
-    function escapeJs(str) {
-      return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    }
-
     function rerenderCategoryManager() {
       const type = document.getElementById('categoryManageType').value;
       document.getElementById('modalBody').innerHTML = buildCategoryManagerHtml(type);
-    }
-
-    function getCustomTreeForEdit(type) {
-      const current = state.customCategories[type] ? clone(state.customCategories[type]) : clone(CATEGORY_BASE[type] || {});
-      return current;
     }
 
     function addMainCategory() {
@@ -1844,6 +2085,39 @@
       if (!confirm(`"${sub}" 하위 카테고리를 삭제할까요?`)) return;
       const tree = getCustomTreeForEdit(type);
       tree[category] = (tree[category] || []).filter(v => v !== sub);
+      state.customCategories[type] = tree;
+      saveState();
+      rerenderCategoryManager();
+      renderAll();
+    }
+
+    function moveMainCategory(type, category, direction) {
+      const tree = getCustomTreeForEdit(type);
+      const entries = Object.entries(tree);
+      const idx = entries.findIndex(([key]) => key === category);
+      if (idx < 0) return;
+
+      const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+      if (targetIdx < 0 || targetIdx >= entries.length) return;
+
+      [entries[idx], entries[targetIdx]] = [entries[targetIdx], entries[idx]];
+      state.customCategories[type] = Object.fromEntries(entries);
+      saveState();
+      rerenderCategoryManager();
+      renderAll();
+    }
+
+    function moveSubCategory(type, category, sub, direction) {
+      const tree = getCustomTreeForEdit(type);
+      const subs = [...(tree[category] || [])];
+      const idx = subs.findIndex(v => v === sub);
+      if (idx < 0) return;
+
+      const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+      if (targetIdx < 0 || targetIdx >= subs.length) return;
+
+      [subs[idx], subs[targetIdx]] = [subs[targetIdx], subs[idx]];
+      tree[category] = subs;
       state.customCategories[type] = tree;
       saveState();
       rerenderCategoryManager();
